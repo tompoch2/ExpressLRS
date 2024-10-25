@@ -241,9 +241,6 @@ void CRSFHandset::sendSyncPacketToTX() // in values in us.
 
 void CRSFHandset::RcPacketToChannelsData() // data is packed as 11 bits per channel
 {
-    // for monitoring arming state
-    uint32_t prev_AUX1 = ChannelData[4];
-
     auto payload = (uint8_t const * const)&inBuffer.asRCPacket_t.channels;
     constexpr unsigned srcBits = 11;
     constexpr unsigned dstBits = 11;
@@ -268,13 +265,25 @@ void CRSFHandset::RcPacketToChannelsData() // data is packed as 11 bits per chan
         bitsMerged -= srcBits;
     }
 
-    if (prev_AUX1 != ChannelData[4])
-    {
-        #if defined(PLATFORM_ESP32)
-        devicesTriggerEvent();
-        #endif
-    }
+    //
+    // sends channel data and also communicates commanded armed status in arming mode Function.
+    // frame len 24 -> arming mode Channel: use channel 5
+    // frame len 25 -> arming mode Function: use commanded arming status in extra byte
+    //
+    armCmd = inBuffer.asUint8_t[1] == 24 ? CRSF_to_BIT(ChannelData[4]) : payload[readByteIndex];
+
+    #if defined(PLATFORM_ESP32)
+        // monitoring arming state
+
+        static bool lastArmCmd = false;
+
+        if (lastArmCmd != armCmd) {
+            devicesTriggerEvent();
+            lastArmCmd = armCmd;
+        }
+    #endif
 }
+
 
 bool CRSFHandset::processInternalCrsfPackage(uint8_t *package)
 {
